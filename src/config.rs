@@ -21,6 +21,10 @@ pub struct WebexPeerConfig {
     pub hostname: String,
     #[serde(default)]
     pub root: Option<String>,
+    #[serde(default)]
+    pub user: Option<String>,
+    #[serde(default)]
+    pub key_path: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Default)]

@@ -83,7 +83,7 @@
                 </div>
                 <div style="display: flex; gap: 8px; align-items: center">
                   <small
-                    x-text="entry.dir ? '' : formatSize(entry.size)"
+                    x-text="entry.dir ? '' : humanSize(entry.size)"
                   ></small>
                   <button
                     @click="queueCopy(entry)"
@@ -198,13 +198,16 @@
             // no-op for now
           },
           queueCopy(entry) {
+            let fullPath = this.cwd.substring(1) + "/";
+           fullPath += entry.name;
+           if(fullPath.startsWith("/")) fullPath = fullPath.substring(1);
             fetch("/job", {
               method: "POST",
-              body: entry.name,
+              body: fullPath,
             })
               .then(async (r) => {
                 if (r.status === 200) {
-                  alert("Enqueued job " + d.job_id);
+                  alert("Enqueued job");
                 } else {
                   const t = await r.text();
                   alert("copy error: " + t);
@@ -221,9 +224,6 @@
               if (!r.ok) return;
               this.jobs = await r.json();
             });
-          },
-          formatSize(n) {
-            return n > 1024 ? Math.round(n / 1024) + " KB" : n + " B";
           },
           humanBytes(n) {
             if (!n) return "0 B";

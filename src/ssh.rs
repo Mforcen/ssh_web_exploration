@@ -3,11 +3,11 @@ use std::io::{Read, Write};
 use crate::config::WebexConfig;
 use libssh_rs::{
     AuthMethods, AuthStatus, Error, KnownHosts, Metadata, OpenFlags, PublicKeyHashType, Session,
-    SshOption, SshResult, get_input,
+    SshKey, SshOption, SshResult, get_input,
 };
 
 pub fn list_files(config: &WebexConfig, path: &str) -> Result<Vec<Metadata>, Error> {
-    let sess = start_session(&config.peer.hostname)?;
+    let sess = start_session(&config)?;
     let sftp = sess.sftp()?;
     let files = sftp.read_dir(&format!(
         "{}/{}",
@@ -29,7 +29,7 @@ pub fn copy_file(
     dst: &str,
     callback: impl Fn(CopyFileEvent),
 ) -> Result<(), Error> {
-    let sess = start_session(&config.peer.hostname)?;
+    let sess = start_session(&config)?;
     let sftp = sess.sftp()?;
     let filename = format!("{}/{}", config.peer.root.as_deref().unwrap_or("/"), src);
 
@@ -54,7 +54,7 @@ pub fn copy_file(
     Ok(())
 }
 
-fn start_session(hostname: &str) -> SshResult<Session> {
+fn start_session(config: &WebexConfig) -> SshResult<Session> {
     let sess = Session::new().unwrap();
     sess.set_auth_callback(|prompt, echo, verify, identity| {
         let prompt = match identity {
@@ -65,12 +65,17 @@ fn start_session(hostname: &str) -> SshResult<Session> {
             .ok_or_else(|| Error::Fatal("reading password".to_string()))
     });
 
-    sess.set_option(SshOption::Hostname(hostname.into()))?;
+    sess.set_option(SshOption::Hostname(config.peer.hostname.clone()))?;
     sess.options_parse_config(None)?;
     sess.connect()?;
     verify_known_hosts(&sess)?;
 
-    authenticate(&sess, None)?;
+    let ssh_key = if let Some(path) = config.peer.key_path.as_deref() {
+        Some(SshKey::from_privkey_file(path, None)?)
+    } else {
+        None
+    };
+    authenticate(&sess, config.peer.user.as_deref(), ssh_key)?;
     Ok(sess)
 }
 
@@ -118,7 +123,7 @@ fn prompt_stdin(prompt: &str) -> SshResult<String> {
     Ok(input.trim().to_string())
 }
 
-fn authenticate(sess: &Session, user_name: Option<&str>) -> SshResult<()> {
+fn authenticate(sess: &Session, user_name: Option<&str>, key: Option<SshKey>) -> SshResult<()> {
     match sess.userauth_none(user_name)? {
         AuthStatus::Success => return Ok(()),
         _ => {}
@@ -128,9 +133,16 @@ fn authenticate(sess: &Session, user_name: Option<&str>) -> SshResult<()> {
         let auth_methods = sess.userauth_list(user_name)?;
 
         if auth_methods.contains(AuthMethods::PUBLIC_KEY) {
-            match sess.userauth_public_key_auto(None, None)? {
-                AuthStatus::Success => return Ok(()),
-                _ => {}
+            if let Some(key) = key {
+                match sess.userauth_publickey(user_name, &key)? {
+                    AuthStatus::Success => return Ok(()),
+                    _ => {}
+                }
+            } else {
+                match sess.userauth_public_key_auto(None, None)? {
+                    AuthStatus::Success => return Ok(()),
+                    _ => {}
+                }
             }
         }
 
