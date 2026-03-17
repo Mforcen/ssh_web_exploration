@@ -18,7 +18,8 @@ mod state;
 
 #[tokio::main]
 async fn main() {
-    let config_str = std::fs::read_to_string("config.toml").unwrap_or_default();
+    let config_path = std::env::var("SSH_WEBEX_CONFIG").unwrap_or("config.toml".into());
+    let config_str = std::fs::read_to_string(config_path).unwrap_or_default();
     let config: WebexConfig = toml::from_str(&config_str).unwrap();
     let bind_addr: String = config
         .serve

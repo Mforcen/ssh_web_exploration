@@ -3,6 +3,9 @@ name = "ssh_webex"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+vendored = ["libssh-rs/vendored", "libssh-rs/vendored-openssl"]
+
 [dependencies]
 argon2 = "0.5"
 axum = { version = "0.8", features = ["macros"] }

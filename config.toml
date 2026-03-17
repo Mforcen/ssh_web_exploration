@@ -1,0 +1,13 @@
+[serve]
+bind = "0.0.0.0:3000"
+
+[serve.auth]
+user = "webuser"
+pass_hash = "$argon2i$v=19$m=16,t=2,p=1$UWoxbnlHTjVOcFFDWGFZOQ$fB8sSkuHlNtL4vJtXZU0N0"
+
+[peer]
+hostname = "192.168.1.200"
+root = "/remote/peer/path"
+
+[local]
+path = "/home/user/ssh_webex"
