@@ -1,0 +1,250 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>SSH File Browser</title>
+    <script
+      src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"
+      defer
+    ></script>
+    <style>
+      body {
+        font-family: system-ui, Arial;
+        background: #f7fafc;
+        color: #111;
+        padding: 20px;
+      }
+      .container {
+        max-width: 1000px;
+        margin: 0 auto;
+      }
+      .row {
+        display: flex;
+        gap: 20px;
+      }
+      .box {
+        background: #fff;
+        padding: 16px;
+        border-radius: 8px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      }
+      .list {
+        max-height: 60vh;
+        overflow: auto;
+      }
+      .file {
+        display: flex;
+        justify-content: space-between;
+        padding: 6px 0;
+        border-bottom: 1px solid #eee;
+      }
+      button {
+        padding: 6px 10px;
+        border-radius: 6px;
+        border: 1px solid #ddd;
+        background: #f0f6ff;
+      }
+      .progress {
+        height: 10px;
+        background: #e6eefc;
+        border-radius: 6px;
+        overflow: hidden;
+      }
+      .progress > div {
+        height: 100%;
+        background: #2b7cff;
+        width: 0%;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container" x-data="app()" x-init="init()">
+      <h1>SSH File Browser</h1>
+      <div class="row">
+        <div class="box" style="flex: 1">
+          <h3>Browser</h3>
+          <div style="margin-bottom: 8px">
+            <button @click="goUp()">Up</button>
+            <span style="margin-left: 12px"
+              ><strong>Current:</strong> <span x-text="cwd"></span
+            ></span>
+          </div>
+          <div class="list">
+            <template x-for="entry in entries" :key="entry.name">
+              <div class="file">
+                <div>
+                  <span x-show="entry.type == 'Directory'">📁</span>
+                  <span x-show="entry.type == 'Regular'">📄</span>
+                  <a
+                    href="#"
+                    @click.prevent="entry.type == 'Directory'? enter(entry.name) : select(entry)"
+                    ><span x-text="entry.name"></span
+                  ></a>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center">
+                  <small
+                    x-text="entry.dir ? '' : formatSize(entry.size)"
+                  ></small>
+                  <button
+                    @click="queueCopy(entry)"
+                    x-show="entry.type == 'Regular'"
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <div class="box" style="width: 360px">
+          <h3>Jobs</h3>
+          <div>
+            <button @click="refreshJobs()">Refresh</button>
+          </div>
+          <div style="margin-top: 12px" class="list">
+            <template x-if="job!=null">
+              <div style="padding: 8px; border-bottom: 1px solid #eee">
+                <div style="display: flex; justify-content: space-between">
+                  <div>
+                    <strong x-text="basename(job.src)"></strong>
+                    <div style="font-size: 12px; color: #555">
+                      <span>Running</span> —
+                      <small x-text="job.dst"></small>
+                    </div>
+                  </div>
+                  <div style="text-align: right">
+                    <div
+                      x-text="humanBytes(job.current) + ' / ' + humanBytes(job.size)"
+                    ></div>
+                  </div>
+                </div>
+                <div class="progress" style="margin-top: 8px">
+                  <div
+                    :style=" 'width:' + (job.size? (job.current*100/job.size) : 0) + '%' "
+                  ></div>
+                </div>
+              </div>
+            </template>
+            <div x-show="job==null" style="padding: 12px; color: #666">
+              No running job
+            </div>
+            <template x-for="iter_job in jobs">
+              <div style="padding: 8px; border-bottom: 1px solid #eee">
+                <div style="display: flex; justify-content: space-between">
+                  <div>
+                    <strong x-text="basename(iter_job.src)"></strong>
+                    <div style="font-size: 12px; color: #555">
+                      <span>Pending</span> —
+                      <small x-text="iter_job.dst"></small>
+                    </div>
+                  </div>
+              </div>
+            </template>
+            <div x-show="jobs.length==0" style="padding: 12px; color: #666">
+              No pending jobs
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let interval_id = null;
+      function app() {
+        return {
+          cwd: "/",
+          entries: [],
+          job: null,
+          jobs: [],
+          init() {
+            this.list("/");
+            //this.refreshJobs();
+            if (interval_id == null) {
+              interval_id = setInterval(() => this.refreshJobs(), 10000);
+            }
+          },
+          list(p) {
+            this.cwd = p;
+            let path = "/list" + p;
+            if (path.endsWith("/")) path = path.slice(0, -1);
+            fetch(path)
+              .then(async (r) => {
+                if (!r.ok) {
+                  const t = await r.text();
+                  alert("list error: " + t);
+                  return;
+                }
+                const data = await r.json();
+                if (Array.isArray(data)) this.entries = data;
+                else this.entries = [data];
+              })
+              .catch((e) => alert("list error: " + e));
+          },
+          enter(name) {
+            let np = this.cwd;
+            if (np.endsWith("/")) np = np.slice(0, -1);
+            if (np === "/") np = "";
+            this.list(pathJoin(this.cwd, name));
+          },
+          goUp() {
+            if (this.cwd === "/") return;
+            const parts = this.cwd.split("/").filter(Boolean);
+            parts.pop();
+            this.list("/" + parts.join("/"));
+            if (this.list === "") this.list("/");
+          },
+          select(entry) {
+            // no-op for now
+          },
+          queueCopy(entry) {
+            fetch("/job", {
+              method: "POST",
+              body: entry.name,
+            })
+              .then(async (r) => {
+                if (r.status === 200) {
+                  alert("Enqueued job " + d.job_id);
+                } else {
+                  const t = await r.text();
+                  alert("copy error: " + t);
+                }
+              })
+              .catch((e) => alert("copy error: " + e));
+          },
+          refreshJobs() {
+            fetch("/job").then(async (r) => {
+              if (!r.ok) return;
+              this.job = await r.json();
+            });
+            fetch("/jobs").then(async (r) => {
+              if (!r.ok) return;
+              this.jobs = await r.json();
+            });
+          },
+          formatSize(n) {
+            return n > 1024 ? Math.round(n / 1024) + " KB" : n + " B";
+          },
+          humanBytes(n) {
+            if (!n) return "0 B";
+            const units = ["B", "KB", "MB", "GB", "TB"];
+            let i = 0;
+            let v = n;
+            while (v > 1024 && i < units.length - 1) {
+              v /= 1024;
+              i++;
+            }
+            return Math.round(v * 10) / 10 + " " + units[i];
+          },
+          basename(p) {
+            return p.split("/").filter(Boolean).pop() || p;
+          },
+        };
+      }
+      function pathJoin(a, b) {
+        if (a.endsWith("/")) return a + b;
+        return a + "/" + b;
+      }
+    </script>
+  </body>
+</html>

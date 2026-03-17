@@ -1,0 +1,15 @@
+[package]
+name = "ssh_webex"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+argon2 = "0.5"
+axum = { version = "0.8", features = ["macros"] }
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+libssh-rs = "0.3.6"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+toml = "1"
